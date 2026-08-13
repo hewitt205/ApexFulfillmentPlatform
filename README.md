@@ -1,0 +1,463 @@
+# Apex Fulfillment Platform
+
+A fictional enterprise distributed system used as a senior-engineering apprenticeship and engineering case-study project.
+
+> **This repository is intentionally being built as an engineering case study, not as a toy distributed-systems demo.**
+>
+> The goal is not simply to say, "I built a distributed system."
+>
+> The goal is to demonstrate the ability to walk into a complicated system, understand the business and technical problems, design an architecture, make trade-offs, implement it, test it, diagnose failures, improve it, and explain why those decisions were made.
+
+---
+
+## The Company
+
+**Apex Industrial Supply** sells industrial parts through:
+
+- a desktop application;
+- a web portal;
+- a partner API.
+
+The original Apex system was a large monolith.
+
+It worked, but company growth exposed several problems:
+
+- order processing is slow during peak periods;
+- inventory updates can race with order creation;
+- downstream systems can fail independently;
+- deployments require the whole application to move together;
+- there is no clear service ownership;
+- operational failures are difficult to diagnose.
+
+Apex wants to move toward independently deployable services without throwing away the existing business rules.
+
+The modernization effort therefore needs to address both **technical architecture** and **business continuity**.
+
+See [docs/COMPANY.md](docs/COMPANY.md) for the full fictional company brief.
+
+---
+
+## What We Are Building
+
+The eventual project is an enterprise-style fulfillment platform containing:
+
+- distributed service coordination;
+- service discovery and membership;
+- leader election;
+- service-to-service APIs;
+- order processing;
+- inventory reservation;
+- event-driven workflows;
+- failure detection and recovery;
+- structured logging and observability;
+- automated testing;
+- a React operations console;
+- architecture decision records;
+- incident investigations;
+- a growing engineering ticket history.
+
+The implementation will evolve over time.
+
+The repository's Git history is intentionally part of the deliverable.
+
+A recruiter should be able to look backward through the repository and see the system being:
+
+1. specified;
+2. designed;
+3. implemented;
+4. tested;
+5. broken;
+6. investigated;
+7. redesigned;
+8. improved;
+9. documented.
+
+This is intended to demonstrate engineering process and judgment, not simply code volume.
+
+---
+
+## Architecture Direction
+
+The initial target architecture is:
+
+```text
+                    +----------------------+
+                    |   Apex Operations UI |
+                    |        React         |
+                    +----------+-----------+
+                               |
+                              API
+                               |
+                    +----------v-----------+
+                    |    Apex Platform     |
+                    |                      |
+                    | Service Registry     |
+                    | Leader Election      |
+                    | Messaging            |
+                    | Health Monitoring    |
+                    +----------+-----------+
+                               |
+              +----------------+----------------+
+              |                |                |
+              v                v                v
+        Order Service   Inventory Service   Shipping Service
+```
+
+The initial coordination concept is:
+
+```text
+Service Registry
+       |
+       +---- inventory-01
+       |
+       +---- inventory-02
+              |
+              v
+       Leader Election
+              |
+              v
+        inventory-01
+```
+
+These diagrams represent the architecture **direction**. They are not a claim that all of these components currently exist.
+
+The architecture will change as requirements, constraints, failures, and new information are discovered. Architecture changes should be recorded in the repository rather than silently replacing earlier decisions.
+
+See:
+
+- [docs/architecture/](docs/architecture/)
+- [docs/adr/](docs/adr/)
+
+---
+
+## Senior-Engineer Workflow
+
+This project follows a deliberate engineering workflow. We will not begin each feature by immediately writing code. Instead:
+
+1. Read the fictional company's requirements.
+2. Identify the business and technical problems.
+3. Determine what the system needs.
+4. Draw the architecture.
+5. Identify the components.
+6. Decide where an API belongs.
+7. Decide what the UI actually needs to observe/control.
+8. Record those decisions as architecture decisions.
+9. Then build the pieces.
+
+This process is more important than any individual technology used in the implementation.
+
+See [docs/ENGINEERING-WORKFLOW.md](docs/ENGINEERING-WORKFLOW.md) for the full nine-step framework.
+
+---
+
+## Engineering Work Queue
+
+The repository contains a lightweight pseudo-ticket tracker representing the work generated by the fictional company.
+
+See [docs/TICKETS.md](docs/TICKETS.md).
+
+Tickets may represent:
+
+- requirements;
+- architecture tasks;
+- features;
+- bugs;
+- incidents;
+- operational problems;
+- technical debt;
+- performance problems;
+- testing work;
+- DSA exercises.
+
+Tickets are intentionally kept in Git so that specific commits can be associated with specific engineering problems. For example:
+
+```
+APEX-014 Fix stale inventory reservation
+```
+
+can correspond to commits such as:
+
+```
+APEX-014 reproduce stale reservation
+APEX-014 add failing concurrency test
+APEX-014 implement reservation guard
+APEX-014 document consistency decision
+```
+
+The objective is to create a visible engineering trail rather than a repository containing only finished features.
+
+---
+
+## Current Status
+
+This is the **foundation repository**, not the finished platform.
+
+The current implementation contains a small C++17 coordination model providing:
+
+- service registration;
+- service leases;
+- leader election;
+- domain objects (orders, inventory);
+- API contracts;
+- unit tests;
+- a small demonstration executable.
+
+It deliberately has **no third-party runtime dependencies**.
+
+The current coordination model is intentionally simple. It exists so the underlying distributed-system problems can be understood before introducing production coordination technologies (ZooKeeper, Consul, etcd, Kubernetes).
+
+There is currently no UI. The React operations console is a planned future component — see M6 below — introduced once there is something meaningful for it to observe and control.
+
+---
+
+## Build
+
+### Requirements
+
+- Visual Studio 2022/2026 with C++ desktop development (or any C++17-capable compiler + CMake on Linux/macOS)
+- CMake 3.20+
+- C++17
+
+### Configure and build
+
+From the repository root:
+
+```
+cmake -S . -B build
+cmake --build build --config Debug
+```
+
+### Run the demonstration
+
+```
+./build/apex_demo          # Linux/macOS
+.\build\Debug\apex_demo.exe   # Windows (generator-dependent path)
+```
+
+### Run tests
+
+```
+ctest --test-dir build -C Debug --output-on-failure
+```
+
+---
+
+## Planned Milestones
+
+### M0 — Requirements and Architecture
+
+Establish the engineering problem before implementation.
+
+- fictional company requirements;
+- business problems;
+- technical constraints;
+- architecture;
+- service boundaries;
+- API boundaries;
+- UI responsibilities;
+- architecture decision records.
+
+### M1 — Coordination (current milestone)
+
+Build the coordination foundation.
+
+- service registration;
+- service leases;
+- heartbeats;
+- service membership;
+- leader election;
+- failure detection.
+
+The goal is to understand the coordination problem rather than hide it behind ZooKeeper, Consul, etcd, or Kubernetes.
+
+### M2 — Real Network Boundary
+
+Turn the domain model into actual communicating processes.
+
+- TCP/HTTP transport;
+- service-to-service communication;
+- request IDs;
+- timeouts;
+- retries;
+- error contracts;
+- service discovery.
+
+### M3 — Orders and Inventory
+
+Introduce the core business workflow.
+
+- order API;
+- inventory reservation;
+- idempotency;
+- consistency rules;
+- concurrent requests;
+- validation;
+- failure handling.
+
+### M4 — Events
+
+Introduce asynchronous communication.
+
+- append-only event log;
+- event producers;
+- event consumers;
+- retries;
+- duplicate delivery;
+- ordering;
+- consumer failure.
+
+### M5 — Failure Engineering
+
+Intentionally break the system.
+
+- process crashes;
+- network delay;
+- stale leases;
+- duplicate requests;
+- leader failure;
+- service disappearance;
+- split-brain scenarios;
+- recovery.
+
+For significant failures, the repository should contain: reproduction steps, observed behavior, root cause, contributing factors, remediation, and tests preventing regression.
+
+### M6 — React Operations Console
+
+Build a real UI for operating the system, once there is something worth operating.
+
+Potential capabilities: service health, service membership, current leaders, recent events, request/operation status, failure information, operational controls where appropriate.
+
+### M7 — Production Thinking
+
+Move from "working system" toward "operable system": structured logging, metrics, tracing, configuration, deployment topology, security boundaries, performance testing, capacity considerations, operational documentation.
+
+### M8 — Engineering Case Study
+
+Produce the final engineering artifacts: architecture diagrams, ADRs, incident reports, performance measurements, test strategy, migration plan, operational documentation, final engineering write-up.
+
+---
+
+## Engineering Philosophy
+
+The repository is intentionally not treated as a sequence of programming exercises.
+
+The intended workflow is:
+
+1. Understand the business problem.
+2. Identify the technical constraints.
+3. Propose an architecture.
+4. Record the decision.
+5. Implement a small slice.
+6. Test it.
+7. Introduce failure.
+8. Diagnose the failure.
+9. Improve the design.
+10. Document the trade-off.
+
+The repository will intentionally grow more complicated. That is part of the exercise.
+
+Real engineering involves incomplete information, legacy constraints, competing requirements, unexpected failures, changing architecture, technical debt, operational concerns, communication, and trade-offs. The project should reflect those realities.
+
+---
+
+## Why C++?
+
+C++ is being used for the initial backend implementation because the project began as an exercise in understanding distributed systems at a relatively low level.
+
+The architecture is intentionally language and stack agnostic. The important engineering concepts are: service boundaries, APIs, contracts, concurrency, coordination, failure handling, consistency, observability, testing, deployment, architecture.
+
+The implementation language is a tool, not the objective. The React operations console (M6) provides a second technology boundary and deliberately introduces modern web development into the project later.
+
+---
+
+## Data Structures and Algorithms
+
+DSA practice is integrated into the project where practical, rather than isolated into unrelated coding puzzles.
+
+Particular emphasis: strings, arrays, hash tables, searching, indexing, lookup structures, deduplication, caching, queues, concurrency-related data structures.
+
+When a DSA problem naturally occurs in the system, it should be solved in the context of the actual engineering problem. For example: "How do we efficiently determine whether a service is already registered?" is more valuable here than solving an unrelated hash-table exercise in isolation.
+
+The repository may contain explicit DSA tickets when a concept deserves focused practice.
+
+---
+
+## Repository Structure
+
+```
+ApexFulfillmentPlatform/
+|
++-- src/
+|   +-- coordination/
+|   +-- domain/
+|   +-- main.cpp
+|
++-- tests/
+|
++-- docs/
+|   +-- COMPANY.md
+|   +-- TICKETS.md
+|   +-- ENGINEERING-WORKFLOW.md
+|   +-- architecture/
+|   +-- adr/
+|
++-- CMakeLists.txt
++-- README.md
+```
+
+The exact structure will evolve with the architecture rather than being fully imposed in advance. (`ui/`, `src/orders/`, `src/inventory/`, `src/messaging/`, `docs/incidents/` will be added as later milestones require them.)
+
+---
+
+## Git History as Part of the Project
+
+Git is part of the engineering exercise. Commits should describe meaningful engineering work.
+
+Prefer:
+
+```
+APEX-012 Add service heartbeat tracking
+APEX-012 Add failing heartbeat timeout test
+APEX-012 Fix expired service cleanup
+ADR-003 Choose lease-based service membership
+```
+
+over:
+
+```
+update stuff
+fix
+changes
+final
+```
+
+The repository should tell the story of the project. A reviewer should be able to inspect the history and understand how the system evolved.
+
+---
+
+## The Goal
+
+The objective is not:
+
+> "I built a distributed system in C++."
+
+The objective is:
+
+> "I can walk into a complicated system, understand the business and technical problems, design an architecture, make trade-offs, implement it, test it, diagnose failures, improve it, and explain why I made those decisions."
+
+The technology may change. The architecture may change. The requirements may change. The system may fail. The engineering process should remain visible throughout.
+
+---
+
+## Project Status
+
+| | |
+|---|---|
+| Current phase | Foundation / M0 → M1 |
+| Current focus | Coordination architecture and implementation |
+| Primary backend | C++17 |
+| Frontend target | React (not yet started — see M6) |
+| Build system | CMake |
+| Testing | CTest |
+| Documentation | Markdown + architecture diagrams + ADRs |
+| Project type | Fictional enterprise engineering case study |
