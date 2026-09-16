@@ -36,20 +36,20 @@
 |            +-----------------------------+                    |
 |            | (read, async)                                    |
 |            v                                                  |
-|   +--------------------+                                      |
-|   | State Aggregator    |                                     |
-|   +--------+-----------+                                      |
-|            |  (read, async, via interface)                    |
-+------------|--------------------------------------------------+
-             |
-             v
+|   +--------------------+       +----------------------+         |
+|   | State Aggregator    |     | Warehouse Gateway     |         |
+|   +--------+-----------+     +----------+-----------+          |
+|            |  (read, async, via interface)  |                  |
++------------|--------------------------------|------------------+
+             |                                |
+             v                                v
 +-------------------------------------------------------------+
 |                    LAYER 1 — EXISTING SYSTEMS                |
 |      Order System | Warehouse Systems | Shipping | Accounting|
 +-------------------------------------------------------------+
 
    Sync path (commitment only):
-   Fulfillment Planner ----(sync, reserve request)----> Warehouse System
+   Fulfillment Planner --(sync, reserve request)--> Warehouse Gateway --(sync, retry/timeout policy applied)--> Warehouse System
 
    Every component also writes to:
    +--------------------+
@@ -59,7 +59,7 @@
 
 **Key:**
 - Solid downward arrows = async, read-only, via interface
-- The single sync path is explicitly called out separately — it is the one exception to "everything talks to Layer 1 through the Aggregator"
+- The single sync path is explicitly called out separately — it is the one exception to "everything talks to Layer 1 through the Aggregator," and it is isolated inside its own component (Warehouse Gateway) rather than handled inline by Fulfillment Planner
 - Event Log receives writes from every component but is not queried by them; it exists for traceability, not coordination
 
 ---
@@ -68,7 +68,7 @@
 
 ### State Aggregator
 
-**Responsibility:** Pull and hold a projected view of orders, inventory, and warehouse status from Layer 1 systems.
+**Responsibility:** Pull and hold a projected view of orders, inventory, and warehouse status from Layer 1 systems. Warehouse status includes each warehouse's operating window (when it is actually reachable/staffed), alongside distance, stock, and capacity — not only a real-time health signal. A warehouse outside its operating window is filtered out as a fulfillment candidate at planning time, before any commitment attempt is made.
 
 **Talks to:** Layer 1, read-only, through a defined interface — never directly against a Layer 1 database.
 
@@ -102,13 +102,23 @@
 
 ### Fulfillment Planner
 
-**Responsibility:** Select the best candidate warehouse for an order, using the Aggregator's projected data, then perform the synchronous commitment call to reserve inventory at the warehouse.
+**Responsibility:** Select the best candidate warehouse for an order, using the Aggregator's projected data (including operating windows), then hand the selected candidate to the Warehouse Gateway to attempt commitment. If commitment fails, select the next viable candidate and try again. If no candidate remains viable — for example, every warehouse capable of serving the order's region is currently outside its operating window — move the order into an "awaiting fulfillment window" state rather than continuing to retry.
 
-**Talks to:** State Aggregator (async, read, for planning), Warehouse System directly (sync, for commitment).
+**Talks to:** State Aggregator (async, read, for planning), Warehouse Gateway (sync, for commitment attempts).
 
-**Why it exists as its own component:** No single warehouse system has a cross-warehouse view, so this decision cannot live in Layer 1. It is the one component that legitimately needs both the async planning view and a synchronous path to Layer 1.
+**Why it exists as its own component:** No single warehouse system has a cross-warehouse view, so this decision cannot live in Layer 1. It is the component responsible for the planning decision, but it does not own the mechanics of the sync call itself — that responsibility belongs to the Warehouse Gateway (below).
 
-**Noted assumption:** The Planner calls the warehouse directly for the commitment step, rather than routing that sync call through a separate dedicated interface component. This is the simpler default. If a narrower, dedicated sync-only interface later proves necessary (for example, to reuse the commitment path from another component, or to apply consistent retry/timeout policy in one place), that would be a revisit at the ADR stage — not a change to this component's core responsibility.
+**"Awaiting fulfillment window" order state:** This is a new value under the existing Order State Tracking capability, not a new capability. It exists so an order genuinely waiting on a warehouse's operating hours is visibly distinct from a stuck or failed order — preserving the traceability the platform is built to provide. What wakes a waiting order back up (scheduled re-check vs. an event fired when a warehouse's window opens) is a mechanism decision, left open for Step 6.
+
+---
+
+### Warehouse Gateway
+
+**Responsibility:** Own the synchronous commitment call to a warehouse — "reserve this inventory at this warehouse" — including retry policy, timeout policy, and circuit-breaking behavior for that warehouse's connection. Reports success or failure back to the Fulfillment Planner; does not make fulfillment decisions itself.
+
+**Talks to:** Warehouse System (sync, the sole synchronous path from Layer 2 into Layer 1). Fulfillment Planner (sync, request/response).
+
+**Why it exists as its own component:** Warehouse connections have historically been unreliable, satellite-like links rather than always-on connections. Isolating retry/timeout/circuit-breaking logic here means that behavior is defined once, consistently, rather than reimplemented anywhere a component needs to reach a warehouse. It also keeps the Fulfillment Planner focused solely on the planning decision — it asks the Gateway to attempt a reservation and reacts to success or failure, without managing connection details itself.
 
 ---
 
@@ -124,8 +134,9 @@
 
 ## 3. Boundary Rules Carried Forward
 
-- The State Aggregator is the only component that reads from Layer 1 in the normal (async) path. The Fulfillment Planner's sync commitment call is the sole documented exception.
-- No component other than the State Aggregator and Fulfillment Planner touches Layer 1 at all.
+- The State Aggregator is the only component that reads from Layer 1 in the normal (async) path.
+- The Warehouse Gateway is the only component that performs a synchronous call into Layer 1 — this is the sole documented exception to the async-by-default rule, and it is isolated inside one component rather than spread across others.
+- No component other than the State Aggregator and Warehouse Gateway touches Layer 1 at all. The Fulfillment Planner reaches Layer 1 only indirectly, through the Gateway.
 - The Event Log is a sink, not a source. No component queries it to make a decision.
 - Every component is independently deployable — a change to one does not require redeploying another.
 
